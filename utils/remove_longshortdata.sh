@@ -56,6 +56,6 @@ comm -12 <(sort ${odir}/tmp/reclist1) <(sort ${odir}/tmp/reclist2) > ${odir}/tmp
 reduce_data_dir.sh ${sdir} ${odir}/tmp/reclist ${odir}
 utils/fix_data_dir.sh ${odir}
 
-oldnum=$(wc -l ${sdir}/feats.scp | awk '{print $1}')
-newnum=$(wc -l ${odir}/feats.scp | awk '{print $1}')
+oldnum=$(wc -l ${sdir}/wav.scp | awk '{print $1}')
+newnum=$(wc -l ${odir}/wav.scp | awk '{print $1}')
 echo "change from $oldnum to $newnum"
