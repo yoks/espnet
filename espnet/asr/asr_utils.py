@@ -491,7 +491,7 @@ def snapshot_object(target, filename):
         An extension function.
 
     """
-    @extension.make_extension(trigger=(1, 'epoch'), priority=-100)
+    @extension.make_extension(trigger=(100, 'iteration'), priority=-100)
     def snapshot_object(trainer):
         torch_save(os.path.join(trainer.out, filename.format(trainer)), target)
 
