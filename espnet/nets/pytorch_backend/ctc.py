@@ -23,6 +23,8 @@ class CTC(torch.nn.Module):
         self.loss = None
         self.ctc_lo = torch.nn.Linear(eprojs, odim)
         self.ctc_type = ctc_type
+        if torch.__version__ == "1.3.1":
+            self.ctc_type = 'builtin'
 
         if self.ctc_type == 'builtin':
             reduction_type = 'sum' if reduce else 'none'
