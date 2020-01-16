@@ -3,9 +3,11 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
+from distutils.version import LooseVersion
 
 from espnet.nets.pytorch_backend.nets_utils import to_device
 
+is_torch_1_2_plus = LooseVersion(torch.__version__) >= LooseVersion('1.2.0')
 
 class CTC(torch.nn.Module):
     """CTC module
@@ -23,7 +25,8 @@ class CTC(torch.nn.Module):
         self.loss = None
         self.ctc_lo = torch.nn.Linear(eprojs, odim)
         self.ctc_type = ctc_type
-        if torch.__version__ == "1.3.1":
+        
+        if is_torch_1_2_plus:
             self.ctc_type = 'builtin'
 
         if self.ctc_type == 'builtin':

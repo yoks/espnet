@@ -84,7 +84,7 @@ class E2E(ASRInterface, torch.nn.Module):
         """Return PlotAttentionReport."""
         return PlotAttentionReport
 
-    def __init__(self, idim, odim, args, ignore_id=-1):
+    def __init__(self, idim, odim, args, ignore_id=-1, export_mode=False):
         """Construct an E2E object.
 
         :param int idim: dimension of inputs
@@ -103,7 +103,8 @@ class E2E(ASRInterface, torch.nn.Module):
             input_layer=args.transformer_input_layer,
             dropout_rate=args.dropout_rate,
             positional_dropout_rate=args.dropout_rate,
-            attention_dropout_rate=args.transformer_attn_dropout_rate
+            attention_dropout_rate=args.transformer_attn_dropout_rate,
+            export_mode=export_mode
         )
         self.decoder = Decoder(
             odim=odim,
@@ -114,7 +115,8 @@ class E2E(ASRInterface, torch.nn.Module):
             dropout_rate=args.dropout_rate,
             positional_dropout_rate=args.dropout_rate,
             self_attention_dropout_rate=args.transformer_attn_dropout_rate,
-            src_attention_dropout_rate=args.transformer_attn_dropout_rate
+            src_attention_dropout_rate=args.transformer_attn_dropout_rate,
+            export_mode=export_mode
         )
         self.sos = odim - 1
         self.eos = odim - 1
@@ -299,9 +301,10 @@ class E2E(ASRInterface, torch.nn.Module):
 
         import six
         traced_decoder = None
+        cache = None
+        new_cache = None
         for i in six.moves.range(maxlen):
             logging.debug('position ' + str(i))
-
             hyps_best_kept = []
             for hyp in hyps:
                 vy.unsqueeze(1)
@@ -311,13 +314,15 @@ class E2E(ASRInterface, torch.nn.Module):
                 ys_mask = subsequent_mask(i + 1).unsqueeze(0)
                 ys = torch.tensor(hyp['yseq']).unsqueeze(0)
                 # FIXME: jit does not match non-jit result
+                if new_cache is not None and new_cache[0].shape[1] == ys.shape[1] - 1:
+                    cache = new_cache
                 if use_jit:
                     if traced_decoder is None:
                         traced_decoder = torch.jit.trace(self.decoder.forward_one_step,
-                                                         (ys, ys_mask, enc_output))
-                    local_att_scores = traced_decoder(ys, ys_mask, enc_output)[0]
+                                                         (ys, ys_mask, enc_output, cache))
+                    local_att_scores, new_cache = traced_decoder(ys, ys_mask, enc_output, cache)
                 else:
-                    local_att_scores = self.decoder.forward_one_step(ys, ys_mask, enc_output)[0]
+                    local_att_scores, new_cache = self.decoder.forward_one_step(ys, ys_mask, enc_output, cache)
 
                 if rnnlm:
                     rnnlm_state, local_lm_scores = rnnlm.predict(hyp['rnnlm_prev'], vy)

@@ -24,6 +24,18 @@ def _pre_hook(state_dict, prefix, local_metadata, strict,
     if k in state_dict:
         state_dict.pop(k)
 
+@torch.jit.script
+def compare_helper(pe, x):
+    comp = pe.size(1) >= x.size(1)
+    if comp:
+        return torch.tensor(comp)
+    else:
+        return None
+
+@torch.jit.script
+def scale_helper(x, xscale, pe):
+    x = x * xscale + pe[:, :x.size(1)]
+    return x
 
 class PositionalEncoding(torch.nn.Module):
     """Positional encoding.
@@ -38,7 +50,7 @@ class PositionalEncoding(torch.nn.Module):
         """Construct an PositionalEncoding object."""
         super(PositionalEncoding, self).__init__()
         self.d_model = d_model
-        self.xscale = math.sqrt(self.d_model)
+        self.xscale = torch.tensor(math.sqrt(self.d_model))
         self.dropout = torch.nn.Dropout(p=dropout_rate)
         self.pe = None
         self.extend_pe(torch.tensor(0.0).expand(1, max_len))
@@ -47,7 +59,8 @@ class PositionalEncoding(torch.nn.Module):
     def extend_pe(self, x):
         """Reset the positional encodings."""
         if self.pe is not None:
-            if self.pe.size(1) >= x.size(1):
+            res = compare_helper(self.pe, x)
+            if res is not None:
                 if self.pe.dtype != x.dtype or self.pe.device != x.device:
                     self.pe = self.pe.to(dtype=x.dtype, device=x.device)
                 return
@@ -71,7 +84,7 @@ class PositionalEncoding(torch.nn.Module):
 
         """
         self.extend_pe(x)
-        x = x * self.xscale + self.pe[:, :x.size(1)]
+        x = scale_helper(x, self.xscale, self.pe)
         return self.dropout(x)
 
 

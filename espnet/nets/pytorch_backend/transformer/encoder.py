@@ -55,7 +55,8 @@ class Encoder(torch.nn.Module):
                  concat_after=False,
                  positionwise_layer_type="linear",
                  positionwise_conv_kernel_size=1,
-                 padding_idx=-1):
+                 padding_idx=-1,
+                 export_mode=False):
         """Construct an Encoder object."""
         super(Encoder, self).__init__()
 
@@ -110,8 +111,9 @@ class Encoder(torch.nn.Module):
         )
         if self.normalize_before:
             self.after_norm = LayerNorm(attention_dim)
+        self.export_mode = export_mode
 
-    def forward(self, xs, masks):
+    def forward(self, xs, masks=None):
         """Encode input sequence.
 
         :param torch.Tensor xs: input tensor
@@ -126,7 +128,11 @@ class Encoder(torch.nn.Module):
         xs, masks = self.encoders(xs, masks)
         if self.normalize_before:
             xs = self.after_norm(xs)
-        return xs, masks
+            
+        if self.export_mode:
+            return xs
+        else:
+            return xs, masks
 
     def forward_one_step(self, xs, masks, cache=None):
         """Encode input frame.

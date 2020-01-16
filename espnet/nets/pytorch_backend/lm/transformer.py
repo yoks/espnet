@@ -12,6 +12,12 @@ from espnet.nets.pytorch_backend.transformer.embedding import PositionalEncoding
 from espnet.nets.pytorch_backend.transformer.encoder import Encoder
 from espnet.nets.pytorch_backend.transformer.mask import subsequent_mask
 
+@torch.jit.script
+def _subsequent_mask(size):
+    ret = torch.ones(size.size(-1), size.size(-1), device="cpu", dtype=torch.bool)
+    for i, m in enumerate(ret):
+        m[i+1:]=torch.tensor(False)
+    return ret
 
 class TransformerLM(nn.Module, LMInterface):
     """Transformer language model."""
@@ -35,7 +41,7 @@ class TransformerLM(nn.Module, LMInterface):
                             help='positional encoding')
         return parser
 
-    def __init__(self, n_vocab, args):
+    def __init__(self, n_vocab, args, export_mode=False):
         """Initialize class.
 
         Args:
@@ -63,13 +69,17 @@ class TransformerLM(nn.Module, LMInterface):
             input_layer="linear",
             pos_enc_class=pos_enc_class)
         self.decoder = nn.Linear(args.att_unit, n_vocab)
+        self.export_mode = export_mode
 
     def _target_mask(self, ys_in_pad):
         ys_mask = ys_in_pad != 0
-        m = subsequent_mask(ys_mask.size(-1), device=ys_mask.device).unsqueeze(0)
+        if self.export_mode:
+            m = _subsequent_mask(ys_mask).unsqueeze(0)
+        else:
+            m = subsequent_mask(ys_mask.size(-1), device=ys_mask.device).unsqueeze(0)
         return ys_mask.unsqueeze(-2) & m
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, t: torch.Tensor, state=None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute LM loss value from buffer sequences.
 
         Args:
@@ -86,15 +96,18 @@ class TransformerLM(nn.Module, LMInterface):
             The last two return values are used in perplexity: p(t)^{-n} = exp(-log p(t) / n)
 
         """
-        xm = (x != 0)
-        h, _ = self.encoder(self.embed(x), self._target_mask(x))
-        y = self.decoder(h)
-        loss = F.cross_entropy(y.view(-1, y.shape[-1]), t.view(-1), reduction="none")
-        mask = xm.to(dtype=loss.dtype)
-        logp = loss * mask.view(-1)
-        logp = logp.sum()
-        count = mask.sum()
-        return logp / count, logp, count
+        if self.export_mode:
+            return self.score(x, state, t)
+        else:
+            xm = (x != 0)
+            h, _ = self.encoder(self.embed(x), self._target_mask(x))
+            y = self.decoder(h)
+            loss = F.cross_entropy(y.view(-1, y.shape[-1]), t.view(-1), reduction="none")
+            mask = xm.to(dtype=loss.dtype)
+            logp = loss * mask.view(-1)
+            logp = logp.sum()
+            count = mask.sum()
+            return logp / count, logp, count
 
     def score(self, y: torch.Tensor, state: Any, x: torch.Tensor) -> Tuple[torch.Tensor, Any]:
         """Score new token.

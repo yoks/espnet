@@ -50,7 +50,8 @@ class Decoder(ScorerInterface, torch.nn.Module):
                  use_output_layer=True,
                  pos_enc_class=PositionalEncoding,
                  normalize_before=True,
-                 concat_after=False):
+                 concat_after=False,
+                 export_mode=False):
         """Construct an Decoder object."""
         torch.nn.Module.__init__(self)
         if input_layer == "embed":
@@ -92,8 +93,9 @@ class Decoder(ScorerInterface, torch.nn.Module):
             self.output_layer = torch.nn.Linear(attention_dim, odim)
         else:
             self.output_layer = None
+        self.export_mode = export_mode
 
-    def forward(self, tgt, tgt_mask, memory, memory_mask):
+    def forward(self, tgt, tgt_mask, memory, memory_mask=None):
         """Forward decoder.
 
         :param torch.Tensor tgt: input token ids, int64 (batch, maxlen_out) if input_layer == "embed"
@@ -111,13 +113,16 @@ class Decoder(ScorerInterface, torch.nn.Module):
         :return tgt_mask: score mask before softmax (batch, maxlen_out)
         :rtype: torch.Tensor
         """
-        x = self.embed(tgt)
-        x, tgt_mask, memory, memory_mask = self.decoders(x, tgt_mask, memory, memory_mask)
-        if self.normalize_before:
-            x = self.after_norm(x)
-        if self.output_layer is not None:
-            x = self.output_layer(x)
-        return x, tgt_mask
+        if self.export_mode:
+            return self.forward_one_step(tgt, tgt_mask, memory, memory_mask)
+        else:
+            x = self.embed(tgt)
+            x, tgt_mask, memory, memory_mask = self.decoders(x, tgt_mask, memory, memory_mask)
+            if self.normalize_before:
+                x = self.after_norm(x)
+            if self.output_layer is not None:
+                x = self.output_layer(x)
+            return x, tgt_mask
 
     def forward_one_step(self, tgt, tgt_mask, memory, cache=None):
         """Forward one step.
@@ -146,7 +151,7 @@ class Decoder(ScorerInterface, torch.nn.Module):
             y = x[:, -1]
         if self.output_layer is not None:
             y = torch.log_softmax(self.output_layer(y), dim=-1)
-
+        
         return y, new_cache
 
     # beam search API (see ScorerInterface)
