@@ -133,7 +133,7 @@ class E2E(ASRInterface, torch.nn.Module):
         self.adim = args.adim
         self.mtlalpha = args.mtlalpha
         if args.mtlalpha > 0.0:
-            self.ctc = CTC(odim, args.adim, args.dropout_rate, ctc_type=args.ctc_type, reduce=True)
+            self.ctc = CTC(odim, args.adim, args.dropout_rate, ctc_type=args.ctc_type, reduce=True, export_mode=True)
         else:
             self.ctc = None
 

@@ -19,7 +19,7 @@ class CTC(torch.nn.Module):
     :param bool reduce: reduce the CTC loss into a scalar
     """
 
-    def __init__(self, odim, eprojs, dropout_rate, ctc_type='warpctc', reduce=True):
+    def __init__(self, odim, eprojs, dropout_rate, ctc_type='warpctc', reduce=True, export_mode=False):
         super().__init__()
         self.dropout_rate = dropout_rate
         self.loss = None
@@ -41,6 +41,7 @@ class CTC(torch.nn.Module):
 
         self.ignore_id = -1
         self.reduce = reduce
+        self.export_mode = export_mode
 
     def loss_fn(self, th_pred, th_target, th_ilen, th_olen):
         if self.ctc_type == 'builtin':
@@ -57,7 +58,7 @@ class CTC(torch.nn.Module):
         else:
             raise NotImplementedError
 
-    def forward(self, hs_pad, hlens, ys_pad):
+    def forward(self, hs_pad, hlens=None, ys_pad=None):
         """CTC forward
 
         :param torch.Tensor hs_pad: batch of padded hidden state sequences (B, Tmax, D)
@@ -66,42 +67,45 @@ class CTC(torch.nn.Module):
         :return: ctc loss value
         :rtype: torch.Tensor
         """
-        # TODO(kan-bayashi): need to make more smart way
-        ys = [y[y != self.ignore_id] for y in ys_pad]  # parse padded ys
-
-        self.loss = None
-        hlens = torch.from_numpy(np.fromiter(hlens, dtype=np.int32))
-        olens = torch.from_numpy(np.fromiter(
-            (x.size(0) for x in ys), dtype=np.int32))
-
-        # zero padding for hs
-        ys_hat = self.ctc_lo(F.dropout(hs_pad, p=self.dropout_rate))
-
-        # zero padding for ys
-        ys_true = torch.cat(ys).cpu().int()  # batch x olen
-
-        # get length info
-        logging.info(self.__class__.__name__ + ' input lengths:  ' + ''.join(str(hlens).split('\n')))
-        logging.info(self.__class__.__name__ + ' output lengths: ' + ''.join(str(olens).split('\n')))
-
-        # get ctc loss
-        # expected shape of seqLength x batchSize x alphabet_size
-        dtype = ys_hat.dtype
-        ys_hat = ys_hat.transpose(0, 1)
-        if self.ctc_type == "warpctc":
-            # warpctc only supports float32
-            ys_hat = ys_hat.to(dtype=torch.float32)
+        if self.export_mode:
+            return self.log_softmax(hs_pad)
         else:
-            # use GPU when using the cuDNN implementation
-            ys_true = to_device(self, ys_true)
-        self.loss = to_device(self, self.loss_fn(ys_hat, ys_true, hlens, olens)).to(dtype=dtype)
-        if self.reduce:
-            # NOTE: sum() is needed to keep consistency since warpctc return as tensor w/ shape (1,)
-            # but builtin return as tensor w/o shape (scalar).
-            self.loss = self.loss.sum()
-            logging.info('ctc loss:' + str(float(self.loss)))
+            # TODO(kan-bayashi): need to make more smart way
+            ys = [y[y != self.ignore_id] for y in ys_pad]  # parse padded ys
 
-        return self.loss
+            self.loss = None
+            hlens = torch.from_numpy(np.fromiter(hlens, dtype=np.int32))
+            olens = torch.from_numpy(np.fromiter(
+                (x.size(0) for x in ys), dtype=np.int32))
+
+            # zero padding for hs
+            ys_hat = self.ctc_lo(F.dropout(hs_pad, p=self.dropout_rate))
+
+            # zero padding for ys
+            ys_true = torch.cat(ys).cpu().int()  # batch x olen
+
+            # get length info
+            logging.info(self.__class__.__name__ + ' input lengths:  ' + ''.join(str(hlens).split('\n')))
+            logging.info(self.__class__.__name__ + ' output lengths: ' + ''.join(str(olens).split('\n')))
+
+            # get ctc loss
+            # expected shape of seqLength x batchSize x alphabet_size
+            dtype = ys_hat.dtype
+            ys_hat = ys_hat.transpose(0, 1)
+            if self.ctc_type == "warpctc":
+                # warpctc only supports float32
+                ys_hat = ys_hat.to(dtype=torch.float32)
+            else:
+                # use GPU when using the cuDNN implementation
+                ys_true = to_device(self, ys_true)
+            self.loss = to_device(self, self.loss_fn(ys_hat, ys_true, hlens, olens)).to(dtype=dtype)
+            if self.reduce:
+                # NOTE: sum() is needed to keep consistency since warpctc return as tensor w/ shape (1,)
+                # but builtin return as tensor w/o shape (scalar).
+                self.loss = self.loss.sum()
+                logging.info('ctc loss:' + str(float(self.loss)))
+
+            return self.loss
 
     def log_softmax(self, hs_pad):
         """log_softmax of frame activations
