@@ -17,6 +17,12 @@ from espnet.nets.pytorch_backend.transformer.positionwise_feed_forward import Po
 from espnet.nets.pytorch_backend.transformer.repeat import repeat
 from espnet.nets.scorer_interface import ScorerInterface
 
+@torch.jit.script
+def _subsequent_mask(size):
+    ret = torch.ones(size.size(-1), size.size(-1), device="cpu", dtype=torch.bool)
+    for i, m in enumerate(ret):
+        m[i+1:]=torch.tensor(False)
+    return ret
 
 class Decoder(ScorerInterface, torch.nn.Module):
     """Transfomer decoder module.
@@ -114,7 +120,9 @@ class Decoder(ScorerInterface, torch.nn.Module):
         :rtype: torch.Tensor
         """
         if self.export_mode:
-            return self.score(tgt, memory, tgt_mask)
+            ys_mask = _subsequent_mask(tgt).unsqueeze(0)
+            logp, state = self.forward_one_step(tgt.unsqueeze(0), ys_mask, tgt_mask.unsqueeze(0), cache=memory)
+            return logp.squeeze(0), state
         else:
             x = self.embed(tgt)
             x, tgt_mask, memory, memory_mask = self.decoders(x, tgt_mask, memory, memory_mask)
