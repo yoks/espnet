@@ -114,7 +114,7 @@ class Decoder(ScorerInterface, torch.nn.Module):
         :rtype: torch.Tensor
         """
         if self.export_mode:
-            return self.forward_one_step(tgt, tgt_mask, memory, memory_mask)
+            return self.score(tgt, memory, tgt_mask)
         else:
             x = self.embed(tgt)
             x, tgt_mask, memory, memory_mask = self.decoders(x, tgt_mask, memory, memory_mask)
