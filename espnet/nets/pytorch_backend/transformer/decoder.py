@@ -101,7 +101,7 @@ class Decoder(ScorerInterface, torch.nn.Module):
             self.output_layer = None
         self.export_mode = export_mode
 
-    def forward(self, tgt, tgt_mask, memory, memory_mask=None):
+    def forward(self, tgt, tgt_mask, memory=None, memory_mask=None):
         """Forward decoder.
 
         :param torch.Tensor tgt: input token ids, int64 (batch, maxlen_out) if input_layer == "embed"
