@@ -77,9 +77,10 @@ class TransformerLM(nn.Module, LMInterface):
             m = _subsequent_mask(ys_mask).unsqueeze(0)
         else:
             m = subsequent_mask(ys_mask.size(-1), device=ys_mask.device).unsqueeze(0)
-        return ys_mask.unsqueeze(-2) & m
+        
+        return ys_mask.unsqueeze(0) & m
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, state=None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, t: torch.Tensor=None, state=None):
         """Compute LM loss value from buffer sequences.
 
         Args:
@@ -97,7 +98,8 @@ class TransformerLM(nn.Module, LMInterface):
 
         """
         if self.export_mode:
-            return self.score(x, state, t)
+            logp, cache = self.score(x, t, None)
+            return logp, torch.stack(cache)
         else:
             xm = (x != 0)
             h, _ = self.encoder(self.embed(x), self._target_mask(x))

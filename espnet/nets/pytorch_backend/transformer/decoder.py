@@ -121,8 +121,8 @@ class Decoder(ScorerInterface, torch.nn.Module):
         """
         if self.export_mode:
             ys_mask = _subsequent_mask(tgt).unsqueeze(0)
-            logp, state = self.forward_one_step(tgt.unsqueeze(0), ys_mask, tgt_mask.unsqueeze(0), cache=memory)
-            return logp.squeeze(0), state
+            logp, state = self.forward_one_step(tgt, ys_mask, tgt_mask, cache=memory)
+            return logp.squeeze(0), torch.stack(state)
         else:
             x = self.embed(tgt)
             x, tgt_mask, memory, memory_mask = self.decoders(x, tgt_mask, memory, memory_mask)
@@ -169,6 +169,6 @@ class Decoder(ScorerInterface, torch.nn.Module):
 
     def score(self, ys, state, x):
         """Score."""
-        ys_mask = subsequent_mask(len(ys), device=x.device).unsqueeze(0)
+        ys_mask = _subsequent_mask(ys).unsqueeze(0)
         logp, state = self.forward_one_step(ys.unsqueeze(0), ys_mask, x.unsqueeze(0), cache=state)
         return logp.squeeze(0), state
