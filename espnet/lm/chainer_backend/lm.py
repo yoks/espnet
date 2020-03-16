@@ -35,9 +35,9 @@ from espnet.lm.lm_utils import read_tokens
 
 import espnet.nets.chainer_backend.deterministic_embed_id as DL
 from espnet.nets.lm_interface import LMInterface
-from espnet.optimizer.adaptor import dynamic_import_optimizer
+from espnet.optimizer.factory import dynamic_import_optimizer
 from espnet.scheduler.chainer import ChainerScheduler
-from espnet.scheduler.scaler import dynamic_import_scaler
+from espnet.scheduler.scheduler import dynamic_import_scheduler
 
 from espnet.utils.training.tensorboard_logger import TensorboardLogger
 from tensorboardX import SummaryWriter
@@ -226,15 +226,15 @@ class BPTTUpdater(training.updaters.StandardUpdater):
 
     :param chainer.dataset.Iterator train_iter : The train iterator
     :param optimizer:
-    :param scalers:
+    :param schedulers:
     :param int device : The device id
     :param int accum_grad :
     """
 
-    def __init__(self, train_iter, optimizer, scalers, device, accum_grad):
+    def __init__(self, train_iter, optimizer, schedulers, device, accum_grad):
         super(BPTTUpdater, self).__init__(
             train_iter, optimizer, device=device)
-        self.scheduler = ChainerScheduler(scalers, optimizer)
+        self.scheduler = ChainerScheduler(schedulers, optimizer)
         self.accum_grad = accum_grad
 
     # The core part of the update routine can be customized by overriding.
@@ -379,16 +379,16 @@ def train(args):
 
     # Set up an optimizer
     opt_class = dynamic_import_optimizer(args.opt, args.backend)
-    optimizer = opt_class(model, args)
-    if args.scalers is None:
-        scalers = []
+    optimizer = opt_class.from_args(model, args)
+    if args.schedulers is None:
+        schedulers = []
     else:
-        scalers = [dynamic_import_scaler(v)(k, args) for k, v in args.scalers]
+        schedulers = [dynamic_import_scheduler(v)(k, args) for k, v in args.schedulers]
 
     optimizer.setup(model)
     optimizer.add_hook(chainer.optimizer.GradientClipping(args.gradclip))
 
-    updater = BPTTUpdater(train_iter, optimizer, scalers, gpu_id, args.accum_grad)
+    updater = BPTTUpdater(train_iter, optimizer, schedulers, gpu_id, args.accum_grad)
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.outdir)
     trainer.extend(LMEvaluator(val_iter, model, device=gpu_id))
     trainer.extend(extensions.LogReport(postprocess=compute_perplexity,
